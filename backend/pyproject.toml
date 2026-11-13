@@ -1,0 +1,66 @@
+[project]
+name = "xenoproxy-backend"
+version = "0.1.0"
+description = "XenoProxy OSINT orchestration platform backend"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi==0.162.2",
+    "uvicorn[standard]==0.54.0",
+    "pydantic==2.14.3",
+    "pydantic-settings==2.16.2",
+    "sqlalchemy[asyncio]==2.1.8",
+    "asyncpg==0.32.0",
+    "alembic==1.20.1",
+    "redis==5.3.1",  # arq 0.28 requires redis<6
+    "arq==0.28.0",
+    "httpx[socks]==0.28.1",
+    "argon2-cffi==25.1.0",
+    "cryptography==50.0.2",
+    "python-multipart==0.0.33",
+    "dnspython==2.9.2",
+    "structlog==26.1.0",
+    "joserfc==1.8.0",
+    "pyotp==2.10.0",
+    "email-validator==2.3.0",
+    "ldap3==2.9.1",
+    # Reads password-protected archives. The standard library only handles
+    # legacy ZipCrypto; a sample is normally shipped in an AES zip.
+    "pyzipper==0.4.0",
+    ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "pytest-asyncio==1.4.1.post1",
+    "ruff==0.17.4",
+    "mypy==2.4.1",
+    "respx==0.23.1",
+    "pip-audit==2.10.1",
+    "bandit==1.9.4",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "C4", "SIM", "RUF"]
+ignore = ["S101", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]
+# The shared HTTP client owns the outbound timeout contract.
+"app/core/http_client.py" = ["ASYNC109"]
+# The entrypoint replaces its own process image; no shell is involved.
+"entrypoint.py" = ["S606"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

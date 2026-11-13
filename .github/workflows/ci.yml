@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    # `dev` is deliberately absent: publish.yml owns that branch and calls this workflow as its test
+    # gate. Triggering here as well would make two runs share the concurrency group below and cancel
+    # each other.
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Called by publish.yml, so a release is gated by exactly the same tests rather than a second copy
+  # of them that can drift.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push to the same branch cancels the run in progress
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The `test` stage is the runtime dependency set plus the development
+      # extras, from the same pyproject. The runtime image carries no test
+      # tooling on purpose, so the suite needs its own stage rather than a pile
+      # of installs written here.
+      - name: Build the test image
+        run: docker build --target test -t xenoproxy-tests ./backend
+
+      - name: Run the test suite
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo/backend xenoproxy-tests \
+            pytest -q -p no:cacheprovider
+
+      - name: Lint
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo/backend xenoproxy-tests \
+            ruff check app tests
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install exactly what the lock file says
+        run: npm ci --ignore-scripts
+        working-directory: frontend
+
+      - name: Lint
+        run: npx eslint src
+        working-directory: frontend
+
+      # `npm run build` is `tsc -b && vite build`: the type-check is part of it
+      - name: Type-check and build
+        run: npm run build
+        working-directory: frontend
+
+  images:
+    name: Images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The runtime images are what gets deployed, and both carry a dependency
+      # audit that fails the build rather than warning. A broken one must not
+      # wait for a release to be discovered.
+      - name: Backend image
+        run: docker build --target runtime -t xenoproxy-backend ./backend
+
+      - name: Frontend image
+        run: docker build -t xenoproxy-frontend ./frontend
+
+  migrations:
+    name: Migrations on PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_USER: xenoproxy_app
+          POSTGRES_DB: xenoproxy
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the test image
+        run: docker build --target test -t xenoproxy-tests ./backend
+
+      # Up, then up again over a schema that is already there.
+      #
+      # Not up-down-up. The baseline shapes the schema with `create_all` over
+      # the *current* models rather than with explicit DDL, so `downgrade base`
+      # drops tables in an order that does not match the revision it claims to
+      # undo — it fails on the foreign keys of tables a later revision added.
+      # Freezing the baseline as real DDL is the fix; until then a down-cycle
+      # would be gating on a path nothing uses.
+      #
+      # Idempotency is what the introspection guards in `app/core/schema_guards`
+      # actually promise, and this is what proves they deliver it rather than
+      # merely intend to.
+      # Generated here rather than written into the file. The migrations only
+      # need the settings to load; a literal key in the repository would be a
+      # finding in every secret scan from now on, for a value that protects
+      # nothing.
+      - name: Upgrade, and upgrade again
+        run: |
+          SECRET_KEY="$(openssl rand -hex 32)"
+          MASTER_KEY="$(openssl rand -base64 32)"
+          docker run --rm --network host -v "$PWD:/repo" -w /repo/backend \
+            -e BACKEND_DB_HOST=127.0.0.1 \
+            -e BACKEND_DB_PORT=5432 \
+            -e BACKEND_DB_NAME=xenoproxy \
+            -e BACKEND_DB_USER=xenoproxy_app \
+            -e BACKEND_DB_PASSWORD=ci \
+            -e BACKEND_SECRET_KEY="$SECRET_KEY" \
+            -e BACKEND_MASTER_KEY="$MASTER_KEY" \
+            xenoproxy-tests sh -c '
+              alembic upgrade head &&
+              alembic stamp base &&
+              alembic upgrade head &&
+              alembic current'

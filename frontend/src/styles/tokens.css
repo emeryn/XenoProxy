@@ -1,0 +1,197 @@
+/*
+ * Design tokens.
+ *
+ * Dark is the default: analysts work in this interface for long stretches, often
+ * beside a terminal. The accent is taken from the XenoProxy shield, which runs
+ * green on one half to cyan on the other. Light stays available and is a real
+ * theme, not an afterthought.
+ *
+ * Three conventions make the rest of the system consistent:
+ *
+ *   - Surfaces are a ladder, not a pair. `sunken` is the page, `surface` the
+ *     panel, `raised` what sits on top of a panel, `overlay` what floats. A
+ *     component picks a rung rather than inventing a colour.
+ *   - Every status colour has a `-soft` companion and a `-border`. A status is
+ *     shown as a tinted chip, which reads at a glance, instead of thin coloured
+ *     text on the page background.
+ *   - Separation comes from a soft shadow and a one-pixel hairline together,
+ *     never from a hard border alone. That is the difference between a panel
+ *     that sits on the page and a box drawn on it.
+ */
+
+:root,
+:root[data-theme='dark'] {
+  --color-surface-sunken: #0a0e14;
+  --color-surface: #11161f;
+  --color-surface-raised: #161c27;
+  --color-surface-overlay: #1b2230;
+  --color-surface-hover: rgb(255 255 255 / 0.045);
+
+  /* Hairlines, not borders: strong enough to separate, faint enough that a
+     dense table does not turn into a grid of lines. */
+  --color-border: #232c3a;
+  --color-border-strong: #313c4e;
+  --color-border-subtle: #1a2130;
+
+  --color-content: #e8edf5;
+  --color-content-muted: #8d9bb0;
+  --color-content-faint: #64718a;
+
+  --color-primary: #35cfe8;
+  --color-primary-hover: #52dcf2;
+  --color-primary-content: #04131a;
+  --color-primary-soft: #35cfe81f;
+  --color-primary-border: #35cfe840;
+  --color-accent-from: #1ddf6e;
+  --color-accent-to: #20c6e8;
+
+  --color-danger: #ff8a84;
+  --color-danger-soft: #ff544c1f;
+  --color-danger-border: #ff544c45;
+  --color-warning: #f0bd6a;
+  --color-warning-soft: #e9a53b1c;
+  --color-warning-border: #e9a53b42;
+  --color-success: #68dca3;
+  --color-success-soft: #3ecb8b1c;
+  --color-success-border: #3ecb8b40;
+  --color-info: #6ad0ec;
+  --color-info-soft: #41bfe21c;
+  --color-info-border: #41bfe240;
+
+  /* Verdicts break the soft-tint rule on purpose.
+     A tint at a tenth of an opacity is enough to label a field, but a verdict
+     has to be found by scanning a list of fifty rows, so it is a solid fill.
+     Dark mode fills bright and writes dark on top, which is the only way an
+     amber and a green stay distinguishable at twelve pixels; every pair below
+     clears 6:1. The plain hue is the one used for rails and bars, where there
+     is no text to contrast against. */
+  --verdict-malicious: #ff6b63;
+  --verdict-malicious-fg: #2b0603;
+  --verdict-suspicious: #f0bd6a;
+  --verdict-suspicious-fg: #291a00;
+  --verdict-clean: #68dca3;
+  --verdict-clean-fg: #04170e;
+  --verdict-unknown: #313c4e;
+  --verdict-unknown-fg: #d6dee9;
+
+  /* The page is not a flat fill: two very wide, very faint accent washes give
+     it depth without becoming decoration. */
+  --page-backdrop:
+    radial-gradient(900px 500px at 12% -8%, #11604726, transparent 70%),
+    radial-gradient(800px 500px at 95% 4%, #0f5f6b26, transparent 72%);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Two layers each: a tight contact shadow for the edge, a wide soft one for
+     the lift. One layer alone looks either pasted on or blurry. */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.25);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -8px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 1px 3px rgb(0 0 0 / 0.5), 0 24px 48px -16px rgb(0 0 0 / 0.65);
+  --shadow-ring: inset 0 1px 0 0 rgb(255 255 255 / 0.04);
+  --glow-accent: 0 0 0 1px rgb(53 207 232 / 0.3), 0 0 24px -6px rgb(53 207 232 / 0.35);
+
+  --focus-ring: 0 0 0 2px var(--color-surface-sunken), 0 0 0 4px var(--color-primary);
+
+  --font-sans:
+    'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:
+    'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --text-3xl: 34px;
+
+  /* Motion is short and eased out: the interface should feel immediate, with
+     just enough movement that a change of state is noticed. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 300ms;
+
+  /* The assistant's side rails. Declared here so the grid can switch
+     between two and three columns without hard-coding widths twice. */
+  --assistant-rail: 232px;
+  --assistant-aside: 248px;
+
+  --topbar-height: 60px;
+  --sidebar-width: 244px;
+  --sidebar-width-collapsed: 64px;
+}
+
+:root[data-theme='light'] {
+  --color-surface-sunken: #eef1f6;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-overlay: #ffffff;
+  --color-surface-hover: rgb(15 23 42 / 0.045);
+
+  --color-border: #dfe4ec;
+  --color-border-strong: #c3cbd8;
+  --color-border-subtle: #ebeef3;
+
+  --color-content: #0f1722;
+  --color-content-muted: #556173;
+  --color-content-faint: #7b8697;
+
+  /* Cyan has too little contrast on white, so light mode deepens the accent. */
+  --color-primary: #0a6d96;
+  --color-primary-hover: #085a7c;
+  --color-primary-content: #ffffff;
+  --color-primary-soft: #0a6d9614;
+  --color-primary-border: #0a6d9638;
+  --color-accent-from: #0f8f5e;
+  --color-accent-to: #0a7f96;
+
+  --color-danger: #b02a21;
+  --color-danger-soft: #b02a2114;
+  --color-danger-border: #b02a2138;
+  --color-warning: #8a5300;
+  --color-warning-soft: #8a530014;
+  --color-warning-border: #8a530038;
+  --color-success: #15693d;
+  --color-success-soft: #15693d14;
+  --color-success-border: #15693d38;
+  --color-info: #0a5c70;
+  --color-info-soft: #0a5c7014;
+  --color-info-border: #0a5c7038;
+
+  /* Light mode inverts the pairing: a dark fill with white on it, since a
+     bright fill on white would have nothing to sit against. */
+  --verdict-malicious: #b02a21;
+  --verdict-malicious-fg: #ffffff;
+  --verdict-suspicious: #8a5300;
+  --verdict-suspicious-fg: #ffffff;
+  --verdict-clean: #15693d;
+  --verdict-clean-fg: #ffffff;
+  --verdict-unknown: #dfe4ec;
+  --verdict-unknown-fg: #0f1722;
+
+  --page-backdrop:
+    radial-gradient(900px 500px at 12% -8%, #0f8f5e12, transparent 70%),
+    radial-gradient(800px 500px at 95% 4%, #0a7f9612, transparent 72%);
+
+  --shadow-sm: 0 1px 2px rgb(15 23 34 / 0.06), 0 1px 3px rgb(15 23 34 / 0.04);
+  --shadow-md: 0 1px 2px rgb(15 23 34 / 0.06), 0 8px 24px -10px rgb(15 23 34 / 0.14);
+  --shadow-lg: 0 1px 3px rgb(15 23 34 / 0.08), 0 24px 48px -18px rgb(15 23 34 / 0.2);
+  --shadow-ring: inset 0 1px 0 0 rgb(255 255 255 / 0.6);
+  --glow-accent: 0 0 0 1px rgb(10 109 150 / 0.22), 0 0 20px -6px rgb(10 109 150 / 0.25);
+
+  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px var(--color-primary);
+}

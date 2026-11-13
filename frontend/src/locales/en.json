@@ -1,0 +1,50 @@
+{
+  "app": {
+    "name": "XenoProxy",
+    "tagline": "OSINT and threat-intelligence orchestration"
+  },
+  "actions": {
+    "create": "Create",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "export": "Export",
+    "search": "Search",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "runAnalysis": "Run the analysis",
+    "rerun": "Re-run"
+  },
+  "nav": {
+    "newScan": "New scan",
+    "jobs": "Jobs",
+    "dashboard": "Dashboard",
+    "myAccess": "My access",
+    "admin": "Admin",
+    "plugins": "Plugins & keys",
+    "playbooks": "Playbooks",
+    "users": "Users",
+    "audit": "Audit"
+  },
+  "verdict": {
+    "unknown": "Unknown",
+    "clean": "Clean",
+    "suspicious": "Suspicious",
+    "malicious": "Malicious"
+  },
+  "status": {
+    "pending": "Pending",
+    "running": "Running",
+    "success": "Success",
+    "partial": "Partial",
+    "failed": "Failed",
+    "skipped": "Skipped"
+  },
+  "empty": {
+    "jobs": "No job matches these filters",
+    "plugins": "No plugin matches these filters",
+    "apiKeys": "No token yet"
+  }
+}

@@ -1,0 +1,57 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+cosign.key
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.vite/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Local data and artefacts
+docs/plugin-example/*.zip
+backups/
+sbom.json
+*.dump
+*.sqlite
+*.db
+*.log
+
+# AI assistant context, kept out of the repository
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.claude/
+.clauderules
+.clinerules
+.roomodes
+.cursor/
+.aider*
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

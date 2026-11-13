@@ -1,0 +1,122 @@
+name: Publish images
+
+# Two ways in, and both run the full test suite first — the CI workflow, *called* as a gate rather
+# than copied, so the tests that guard a release can never drift from the tests that guard a pull
+# request:
+#
+#   * a push to `dev`  -> the `dev` tag, plus `dev-<sha>` to come back to a precise build
+#   * a tag `v1.2.3`   -> `1.2.3`, `1.2`, and `latest`
+#
+# Merging into `main` publishes nothing on its own: a release is a deliberate act, and the tag is
+# that act.
+#
+# Each image goes to **two registries from one build**, so both carry the same digest: Docker Hub,
+# which the deployment documentation points at, and GitHub Packages, next to the code.
+on:
+  push:
+    branches: [dev]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Pushing to ghcr.io with the token the run already has: no secret to create for it
+  packages: write
+
+concurrency:
+  # Named after this workflow so the CI run it calls cannot collide with a CI run of its own
+  group: publish-${{ github.ref }}
+  # A release in flight is never cancelled; a new push to dev supersedes the previous one
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  # Everything a pull request has to pass, passed again on exactly what is about to be published
+  tests:
+    name: Tests
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: ${{ matrix.name }} image
+    runs-on: ubuntu-latest
+    needs: [tests]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: ./backend
+            # The Dockerfile also holds a `test` stage: the published image is the runtime one
+            target: runtime
+          - name: frontend
+            context: ./frontend
+            target: ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The username may be a variable or a secret depending on where it was put; the token is a
+      # secret either way.
+      - name: Sign in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Sign in to GitHub Packages
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Work out the tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # The ghcr.io name uses the repository owner as it is written: that works because
+          # `emeryn` is already lower case, and a registry refuses capitals — an owner with any
+          # would need lower-casing here.
+          images: |
+            ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}/xenoproxy-${{ matrix.name }}
+            ghcr.io/${{ github.repository_owner }}/xenoproxy-${{ matrix.name }}
+          tags: |
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=sha,prefix=dev-,format=short,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          # latest=auto: set by a release tag, and never by a pre-release such as v1.2.0-rc1
+          flavor: latest=auto
+
+      # A workflow_dispatch from a branch other than dev computes no tag at all. Say so, rather
+      # than letting docker fail on an empty tag list several minutes later.
+      - name: There has to be something to tag
+        run: |
+          if [ -z "${{ steps.meta.outputs.tags }}" ]; then
+            echo "::error::nothing to publish from ${{ github.ref }}. Push to dev for the dev tag, or push a v* tag for a release."
+            exit 1
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          # The layer cache lives with the run, so a dev push rebuilds only what changed
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          # One architecture. amd64 is what the deployment documentation describes, and arm64
+          # through QEMU roughly triples the build: add it here when something needs it.
+          platforms: linux/amd64
+
+      - name: What was published
+        run: |
+          echo "### ${{ matrix.name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

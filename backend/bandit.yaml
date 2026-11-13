@@ -1,0 +1,8 @@
+# Bandit configuration. The tests below are the ones that matter for this
+# codebase: process execution, unsafe deserialisation and disabled TLS checks.
+exclude_dirs:
+  - /tests
+  - /migrations
+skips:
+  # assert_used: pytest relies on bare asserts, and they are excluded above.
+  - B101

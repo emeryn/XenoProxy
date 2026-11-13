@@ -1,0 +1,230 @@
+@import './fonts.css';
+@import './tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-surface-sunken);
+    /* The wash is fixed so it belongs to the window rather than scrolling
+       away with the content. */
+    background-image: var(--page-backdrop);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    color: var(--color-content);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Contextual alternates and ligatures are what makes Inter look drawn
+       rather than rendered. */
+    font-feature-settings: 'cv05' 1, 'cv11' 1, 'ss03' 1;
+  }
+
+  /* Figures in a table must line up column by column, which proportional
+     digits do not do. */
+  table,
+  .tabular,
+  time,
+  code,
+  pre,
+  kbd {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+    border-radius: var(--radius-sm);
+  }
+
+  /* An element that already owns its ring draws it itself. */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background: var(--color-primary);
+    color: var(--color-primary-content);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  h1 {
+    letter-spacing: -0.025em;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  hr {
+    border-color: var(--color-border);
+  }
+}
+
+@layer components {
+  /* A panel: hairline, soft lift, and a top inner highlight that reads as a
+     lit edge. The three together are what separates a surface from a box. */
+  .card {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    background-color: var(--color-surface);
+    box-shadow: var(--shadow-sm), var(--shadow-ring);
+  }
+
+  /* A panel that is also a link or a button. */
+  .card-interactive {
+    transition:
+      border-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-base) var(--ease-out),
+      transform var(--duration-base) var(--ease-out);
+  }
+
+  .card-interactive:hover {
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-md), var(--shadow-ring);
+    transform: translateY(-1px);
+  }
+
+  .card-interactive:active {
+    transform: translateY(0);
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-xs font-medium text-muted;
+  }
+
+  .table-cell {
+    @apply border-b border-border-subtle px-3 py-2.5 text-left align-middle;
+  }
+
+  /* A keyboard hint, as a key rather than as text in brackets. */
+  .kbd {
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background-color: var(--color-surface-raised);
+    box-shadow: 0 1px 0 0 var(--color-border);
+    padding: 1px 5px;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 16px;
+    color: var(--color-content-muted);
+  }
+
+  /* A floating surface: the blur is what keeps a sticky bar legible over
+     content that scrolls under it. */
+  .glass {
+    background-color: color-mix(in srgb, var(--color-surface) 78%, transparent);
+    backdrop-filter: saturate(150%) blur(12px);
+    -webkit-backdrop-filter: saturate(150%) blur(12px);
+  }
+
+  /* The skeleton sweeps rather than blinks: a pulse on a dozen rows at once
+     flickers, a sweep reads as one surface loading. */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    background-color: var(--color-border-subtle);
+  }
+
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      var(--color-surface-hover),
+      transparent
+    );
+    animation: skeleton-sweep 1.4s var(--ease-out) infinite;
+  }
+
+  .text-gradient {
+    background-image: linear-gradient(
+      100deg,
+      var(--color-accent-from),
+      var(--color-accent-to)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+@keyframes skeleton-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The scrollbar follows the theme so dark mode has no bright gutters. */
+* {
+  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-strong);
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-content-faint);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Movement is presentation, not information: without it every state the
+   interface shows is still reachable and still readable. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

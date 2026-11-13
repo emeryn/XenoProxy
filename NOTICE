@@ -1,0 +1,33 @@
+XenoProxy
+Copyright 2026 emeryn
+
+This product includes software developed by the XenoProxy contributors.
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+================================================================================
+Third-party code included in this repository
+================================================================================
+
+No third-party code is vendored here. Every dependency is declared and fetched
+at build time, pinned to an exact version in:
+
+  backend/pyproject.toml        (Python, exact pins)
+  frontend/package-lock.json    (JavaScript)
+
+Their licences are their own; nothing of them is copied into this repository.
+An SBOM of a built image is produced with:
+
+  trivy image --format cyclonedx -o sbom.json xenoproxy/backend:0.1.0
+
+================================================================================
+Fonts
+================================================================================
+
+The interface embeds two typefaces rather than fetching them from a CDN, so an
+air-gapped deployment renders identically and no request leaves the browser:
+
+  Inter            SIL Open Font License 1.1   https://rsms.me/inter/
+  JetBrains Mono   SIL Open Font License 1.1   https://www.jetbrains.com/lp/mono/
+
+Only the Latin subset of each is shipped, through the @fontsource-variable
+packages listed in frontend/package.json.

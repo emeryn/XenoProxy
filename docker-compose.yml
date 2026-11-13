@@ -1,0 +1,357 @@
+# XenoProxy production-shaped stack.
+#
+# A clean clone starts with `docker compose up -d` alone: the init service
+# generates every secret into a named volume, so there is no .env to write and no
+# credential in this file. Only the proxy publishes a port; the database network
+# is internal.
+
+name: xenoproxy
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  ulimits:
+    core: 0
+    nofile:
+      soft: 4096
+      hard: 8192
+  restart: unless-stopped
+
+services:
+  secrets-init:
+    image: python:3.13-alpine3.22
+    container_name: xenoproxy-secrets-init
+    user: "0:0"
+    command:
+      - python
+      - -I
+      - -c
+      - |
+        import base64, os, pathlib, secrets, stat
+        # Each secret stays mode 0600. Where two services need the same value under
+        # different uids, it is written once per owner rather than widened to 0640,
+        # because the containers share no group.
+        BACKEND_UID = 10001
+        POSTGRES_UID = 999
+        REDIS_UID = 999
+        target = pathlib.Path('/run/secrets')
+        target.mkdir(parents=True, exist_ok=True)
+        os.chmod(target, 0o755)
+        plan = {
+            'admin_password': (lambda: secrets.token_urlsafe(18), BACKEND_UID),
+            'db_password': (lambda: secrets.token_urlsafe(32), BACKEND_UID),
+            'secret_key': (lambda: secrets.token_urlsafe(48), BACKEND_UID),
+            'master_key': (lambda: base64.b64encode(secrets.token_bytes(32)).decode(), BACKEND_UID),
+            'redis_password': (lambda: secrets.token_urlsafe(32), BACKEND_UID),
+        }
+        values = {}
+        for name, (generate, owner) in plan.items():
+            path = target / name
+            if not path.exists() or not path.read_text().strip():
+                path.write_text(generate())
+                print(f'generated {name}', flush=True)
+            values[name] = path.read_text().strip()
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+            os.chown(path, owner, owner)
+        # The database server reads its own copy as its own uid.
+        pg_copy = target / 'db_password.postgres'
+        pg_copy.write_text(values['db_password'])
+        os.chmod(pg_copy, stat.S_IRUSR | stat.S_IWUSR)
+        os.chown(pg_copy, POSTGRES_UID, POSTGRES_UID)
+        # The queue reads its password from a config file rather than from a
+        # command line argument, so it never appears in the process table.
+        redis_conf = target / 'redis.conf'
+        redis_conf.write_text(
+            'save ""\n'
+            'appendonly no\n'
+            'maxmemory 256mb\n'
+            'maxmemory-policy allkeys-lru\n'
+            'protected-mode no\n'
+            f'requirepass {values["redis_password"]}\n'
+        )
+        os.chmod(redis_conf, stat.S_IRUSR | stat.S_IWUSR)
+        os.chown(redis_conf, REDIS_UID, REDIS_UID)
+        redis_pw = target / 'redis_password.queue'
+        redis_pw.write_text(values['redis_password'])
+        os.chmod(redis_pw, stat.S_IRUSR | stat.S_IWUSR)
+        os.chown(redis_pw, REDIS_UID, REDIS_UID)
+        # The plugins volume is created root-owned, so the API could not write an
+        # uploaded plugin into it without this.
+        plugins = pathlib.Path('/srv/plugins')
+        plugins.mkdir(parents=True, exist_ok=True)
+        os.chown(plugins, BACKEND_UID, BACKEND_UID)
+        os.chmod(plugins, 0o750)
+        uploads = pathlib.Path('/srv/uploads')
+        uploads.mkdir(parents=True, exist_ok=True)
+        os.chown(uploads, BACKEND_UID, BACKEND_UID)
+        os.chmod(uploads, 0o750)
+        print('secrets ready', flush=True)
+    volumes:
+      - secrets:/run/secrets
+      - plugins:/srv/plugins
+      - uploads:/srv/uploads
+    restart: "no"
+
+  database:
+    image: postgres:17.6-alpine
+    container_name: xenoproxy-database
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_DB: xenoproxy
+      POSTGRES_USER: xenoproxy_app
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password.postgres
+      # C.UTF-8 is the one locale both a glibc and a musl build provide, so the
+      # data directory does not depend on the base image. It also gives byte
+      # ordering, which is what an index over hashes and observables wants.
+      POSTGRES_INITDB_ARGS: >-
+        --auth-host=scram-sha-256 --auth-local=scram-sha-256
+        --encoding=UTF8 --locale=C.UTF-8
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      - -c
+      - log_min_duration_statement=2000
+      - -c
+      - max_connections=80
+      - -c
+      - shared_buffers=256MB
+    volumes:
+      - database:/var/lib/postgresql/data
+      - secrets:/run/secrets:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /run:size=16m,mode=0755
+      - /var/run/postgresql:size=16m,mode=0755
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xenoproxy_app -d xenoproxy"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      core: 0
+    mem_limit: 1g
+    pids_limit: 256
+    restart: unless-stopped
+
+  queue:
+    image: redis:8.2-alpine
+    container_name: xenoproxy-queue
+    user: "999:999"
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
+    command: ["redis-server", "/run/secrets/redis.conf"]
+    networks: [data]
+    volumes:
+      - secrets:/run/secrets:ro
+    tmpfs:
+      - /tmp:size=16m
+      - /data:size=64m
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli -a "$$(cat /run/secrets/redis_password.queue)" --no-auth-warning ping
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    mem_limit: 320m
+    pids_limit: 128
+    <<: *hardening
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: xenoproxy/backend:0.1.0
+    container_name: xenoproxy-api
+    command: ["api"]
+    depends_on:
+      database:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+    environment:
+      BACKEND_ENVIRONMENT: production
+      BACKEND_LOG_LEVEL: INFO
+      BACKEND_PUBLIC_URL: http://localhost:8099
+      BACKEND_DOCS_ENABLED: "false"
+      BACKEND_DB_HOST: database
+      BACKEND_DB_NAME: xenoproxy
+      BACKEND_DB_USER: xenoproxy_app
+      BACKEND_DB_PASSWORD_FILE: /run/secrets/db_password
+      BACKEND_REDIS_HOST: queue
+      BACKEND_REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      BACKEND_SECRET_KEY_FILE: /run/secrets/secret_key
+      BACKEND_MASTER_KEY_FILE: /run/secrets/master_key
+      # Choose the first administrator's password here, by replacing the default
+      # below or by setting XENOPROXY_ADMIN_PASSWORD in a .env file next to this one:
+      #
+      #   BACKEND_BOOTSTRAP_ADMIN_PASSWORD: "a-password-of-at-least-12-characters"
+      #
+      # Left empty, one is generated on first boot into the secrets volume and
+      # read back with: docker compose run --rm api admin-password
+      #
+      # An explicit value wins over the generated file, but it is applied when
+      # the account is **created**. Setting it on an instance that already ran
+      # changes nothing until you run: docker compose run --rm api reset-admin
+      #
+      # A value written here is visible to anyone who can read this file or run
+      # `docker inspect`, which the generated one is not.
+      BACKEND_BOOTSTRAP_ADMIN_USERNAME: ${XENOPROXY_ADMIN_USERNAME:-admin}
+      BACKEND_BOOTSTRAP_ADMIN_PASSWORD: ${XENOPROXY_ADMIN_PASSWORD:-}
+      BACKEND_BOOTSTRAP_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      # Two-factor policy. Left unset, both stay editable in Admin, Settings.
+      # Give either one a value here, or in a .env beside this file, to pin it:
+      # the interface then shows it read-only. This is the way out of the
+      # chicken-and-egg, since an account that still owes an enrolment cannot
+      # reach the settings page to turn the requirement off.
+      #   BACKEND_REQUIRE_MFA_FOR_ADMINS: "false"
+      #
+      # The bare form below passes the variable through only when it is set, so
+      # leaving it alone is not the same as setting it to an empty value.
+      BACKEND_REQUIRE_MFA_FOR_ALL:
+      BACKEND_REQUIRE_MFA_FOR_ADMINS:
+      BACKEND_TRUSTED_PROXY_COUNT: "1"
+      BACKEND_ALLOW_PRIVATE_TARGETS: "false"
+      BACKEND_ANALYZER_MAX_CONCURRENCY: "8"
+      BACKEND_PLUGINS_ENABLED: "true"
+      BACKEND_PLUGINS_DIR: /app/plugins
+      BACKEND_UPLOADS_DIR: /app/uploads
+    volumes:
+      - secrets:/run/secrets:ro
+      # Analyzer plugins. Drop a folder in here, or upload a zip from Admin,
+      # Plugins. Bind-mount a host folder instead to edit plugins in place.
+      - plugins:/app/plugins
+      # Submitted samples. Kept apart from the plugins volume: this one
+      # holds untrusted bytes that are never imported and never served.
+      - uploads:/app/uploads
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks: [data, edge]
+    mem_limit: 768m
+    pids_limit: 256
+    <<: *hardening
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: xenoproxy/backend:0.1.0
+    container_name: xenoproxy-worker
+    command: ["worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      BACKEND_ENVIRONMENT: production
+      BACKEND_LOG_LEVEL: INFO
+      BACKEND_DB_HOST: database
+      BACKEND_DB_NAME: xenoproxy
+      BACKEND_DB_USER: xenoproxy_app
+      BACKEND_DB_PASSWORD_FILE: /run/secrets/db_password
+      BACKEND_REDIS_HOST: queue
+      BACKEND_REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      BACKEND_SECRET_KEY_FILE: /run/secrets/secret_key
+      BACKEND_MASTER_KEY_FILE: /run/secrets/master_key
+      BACKEND_ALLOW_PRIVATE_TARGETS: "false"
+      BACKEND_ANALYZER_MAX_CONCURRENCY: "8"
+      BACKEND_PLUGINS_ENABLED: "true"
+      BACKEND_PLUGINS_DIR: /app/plugins
+      BACKEND_UPLOADS_DIR: /app/uploads
+      # Set these to reach the internet through a corporate proxy, and mount the
+      # internal certificate authority instead of disabling verification.
+      # BACKEND_OUTBOUND_PROXY_URL: http://proxy.internal:3128
+      # BACKEND_CUSTOM_CA_FILE: /etc/ssl/internal/ca-bundle.crt
+    volumes:
+      - secrets:/run/secrets:ro
+      - plugins:/app/plugins:ro
+      - uploads:/app/uploads:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks: [data, outbound]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket,os; socket.create_connection((os.environ['BACKEND_REDIS_HOST'], 6379), 4)"]
+      interval: 20s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    mem_limit: 1g
+    pids_limit: 256
+    <<: *hardening
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: xenoproxy/frontend:0.1.0
+    container_name: xenoproxy-frontend
+    networks: [edge]
+    tmpfs:
+      - /tmp:size=32m
+      - /var/cache/nginx:size=32m
+    mem_limit: 192m
+    pids_limit: 128
+    <<: *hardening
+
+  proxy:
+    image: nginxinc/nginx-unprivileged:1.31-alpine-slim
+    container_name: xenoproxy-proxy
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    ports:
+      - "8099:8080"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks: [edge]
+    tmpfs:
+      - /tmp:size=64m
+      - /var/cache/nginx:size=64m
+    healthcheck:
+      # The catch-all server answers 444, so the probe must carry a known host name.
+      test:
+        - CMD-SHELL
+        - 'wget -q -O /dev/null --header="Host: localhost" http://127.0.0.1:8080/ || exit 1'
+      interval: 15s
+      timeout: 4s
+      retries: 4
+      start_period: 15s
+    mem_limit: 192m
+    pids_limit: 128
+    <<: *hardening
+
+networks:
+  # Published surface: the proxy, the frontend and the API.
+  edge:
+    driver: bridge
+  # Database and queue traffic only; no route off the host.
+  data:
+    driver: bridge
+    internal: true
+  # Egress for the analyzers' outbound calls to the OSINT providers.
+  outbound:
+    driver: bridge
+
+volumes:
+  database:
+  secrets:
+  plugins:
+  uploads:

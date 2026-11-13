@@ -1,0 +1,10 @@
+{
+  "api_version": 1,
+  "name": "greynoise_community",
+  "version": "1.0.0",
+  "label": "GreyNoise Community",
+  "description": "Tells whether an IP address is mass-scanning the internet, from the free GreyNoise Community API.",
+  "author": "XenoProxy team",
+  "homepage": "https://docs.greynoise.io/reference/get_v3-community-ip",
+  "entrypoint": "analyzer:GreyNoiseCommunityAnalyzer"
+}
