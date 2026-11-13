@@ -86,6 +86,7 @@ def build_summary(reports: Sequence[PluginReport]) -> dict[str, Any]:
     ports: set[int] = set()
     cves: set[str] = set()
     hostnames: set[str] = set()
+    stack: set[str] = set()
     countries: set[str] = set()
     organisations: set[str] = set()
     asns: set[str] = set()
@@ -101,6 +102,7 @@ def build_summary(reports: Sequence[PluginReport]) -> dict[str, Any]:
         ports.update(int(port) for port in summary.get("open_ports") or [] if isinstance(port, int))
         cves.update(str(cve) for cve in summary.get("cves") or [])
         hostnames.update(str(name) for name in summary.get("hostnames") or [])
+        stack.update(str(entry) for entry in summary.get("technologies") or [])
         if summary.get("country"):
             countries.add(str(summary["country"]))
         if summary.get("organisation"):
@@ -117,6 +119,7 @@ def build_summary(reports: Sequence[PluginReport]) -> dict[str, Any]:
         "open_ports": sorted(ports)[:200],
         "cves": sorted(cves)[:200],
         "hostnames": sorted(hostnames)[:50],
+        "technologies": sorted(stack)[:40],
         "countries": sorted(countries),
         "organisations": sorted(organisations)[:10],
         "asns": sorted(asns)[:10],

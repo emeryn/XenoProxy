@@ -36,9 +36,19 @@ moving a module cannot silently change how it is scheduled.
 | Pivot | `BasePivot` | After the connectors | Derives the next observable and creates a child job |
 
 An analyzer returns the provider payload (`raw_output`) and a normalised
-`summary_data`: verdict, score, tags, open ports, CVEs, geolocation, detection
-ratio and provider links. A connector and a pivot report in the same shape, so
-the interface renders every phase the same way.
+`summary_data`: verdict, score, tags, open ports, CVEs, geolocation, detected
+technologies, detection ratio, per-engine detections and provider links. A
+connector and a pivot report in the same shape, so the interface renders every
+phase the same way.
+
+Two of those fields exist because a single number is not a judgement:
+
+- `detections` names the engines that flagged the observable, and what each one
+  called it. A ratio says three out of seventy; whether to believe it depends on
+  *which* three.
+- `technologies` is what the source saw running — `nginx 1.24.0`,
+  `apache http server 2.4.7` — normalised from whatever shape the provider used,
+  a CPE, a product field or an HTTP `Server` header.
 
 A plugin never raises for a provider-side problem: it reports it. That is what
 keeps one failing integration from failing the job around it.
@@ -217,7 +227,13 @@ column shows.
 
 Authentication is local accounts, OIDC with PKCE, or identity delegated by a
 trusted reverse proxy. All users share one organisation so history and cache are
-pooled; every job records `requested_by`.
+pooled; every job records `requested_by` and `origin`.
+
+`origin` is the entry point the job came in through — `ui`, `api` (a personal
+token), `assistant`, `mcp` or `pivot`. The account is the same whichever one it
+was, so without it a scan the assistant ran on an analyst's behalf is
+indistinguishable in the history from one they ran themselves. The jobs list
+shows it as a mark next to the author and filters on it.
 
 | Permission | analyst | admin |
 |---|---|---|

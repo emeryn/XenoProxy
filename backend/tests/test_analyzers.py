@@ -10,6 +10,8 @@ from app.models.job import ObservableType, PluginKind, ReportStatus, Verdict
 from app.plugins import load_all
 from app.plugins.analyzer.abuseipdb import AbuseIpdbAnalyzer
 from app.plugins.analyzer.shodan import ShodanAnalyzer
+from app.plugins.analyzer.virustotal import VirusTotalAnalyzer
+from app.plugins.base import technologies
 from app.plugins.base.analyzer import BaseAnalyzer
 from app.plugins.base.plugin import PluginResult
 from app.plugins.base.registry import describe, iter_analyzers
@@ -165,3 +167,153 @@ def test_one_failure_degrades_the_job_but_does_not_fail_it() -> None:
 def test_all_failures_fail_the_job() -> None:
     reports = [_Report(ReportStatus.FAILED), _Report(ReportStatus.FAILED)]
     assert aggregate_status(reports).value == "FAILED"  # type: ignore[arg-type]
+
+
+@respx.mock
+async def test_abuseipdb_does_not_flag_an_address_the_provider_scores_at_zero() -> None:
+    """Report count is not evidence: AbuseIPDB already weighed it into the score.
+
+    Anyone may report any address, so well-known infrastructure accumulates
+    reports the way a public inbox accumulates spam — 8.8.8.8 carries close to
+    two hundred of them at a confidence of 0%. Counting them on top of the score
+    made every such address Suspicious, and the job verdict with it.
+    """
+    respx.get(url__startswith="https://api.abuseipdb.com/api/v2/check").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "abuseConfidenceScore": 0,
+                    "totalReports": 192,
+                    "isWhitelisted": True,
+                    "countryName": "Nowhere",
+                    "reports": [{"categories": [14]}],
+                }
+            },
+        )
+    )
+    result = await AbuseIpdbAnalyzer(secrets={"api_key": "x" * 16}).execute(classify("8.8.8.8"))
+    summary = result.summary.as_dict()
+    assert summary["verdict"] == Verdict.CLEAN.value
+    assert summary["extra"]["total_reports"] == 192
+
+
+@respx.mock
+async def test_abuseipdb_flags_a_middling_score_as_suspicious() -> None:
+    respx.get(url__startswith="https://api.abuseipdb.com/api/v2/check").mock(
+        return_value=httpx.Response(
+            200, json={"data": {"abuseConfidenceScore": 30, "totalReports": 3}}
+        )
+    )
+    result = await AbuseIpdbAnalyzer(secrets={"api_key": "x" * 16}).execute(classify("1.2.3.4"))
+    assert result.summary.as_dict()["verdict"] == Verdict.SUSPICIOUS.value
+
+
+@respx.mock
+async def test_virustotal_ignores_a_single_outlying_engine() -> None:
+    """One engine out of seventy is noise, not a finding.
+
+    Promoting it to Suspicious promoted the whole job with it, which is how a
+    verdict stops being read at all.
+    """
+    respx.get(url__startswith="https://www.virustotal.com/api/v3/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "attributes": {
+                        "last_analysis_stats": {
+                            "malicious": 1,
+                            "suspicious": 0,
+                            "harmless": 69,
+                        },
+                        "last_analysis_results": {
+                            "SomeEngine": {
+                                "category": "malicious",
+                                "engine_name": "SomeEngine",
+                                "result": "Trojan.Generic",
+                            },
+                            "Major": {"category": "harmless", "result": None},
+                        },
+                    }
+                }
+            },
+        )
+    )
+    result = await VirusTotalAnalyzer(secrets={"api_key": "x" * 16}).execute(classify("1.2.3.4"))
+    summary = result.summary.as_dict()
+    assert summary["verdict"] == Verdict.CLEAN.value
+    # Never hidden, only stopped from shouting: the one engine is still named.
+    assert summary["detection_ratio"] == "1/70"
+    assert summary["detections"] == [
+        {"engine": "SomeEngine", "category": "malicious", "result": "Trojan.Generic"}
+    ]
+
+
+@respx.mock
+async def test_virustotal_flags_two_agreeing_engines_as_suspicious() -> None:
+    respx.get(url__startswith="https://www.virustotal.com/api/v3/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "attributes": {
+                        "last_analysis_stats": {
+                            "malicious": 1,
+                            "suspicious": 1,
+                            "harmless": 68,
+                        },
+                        "last_analysis_results": {
+                            "Beta": {"category": "suspicious", "result": "Heuristic"},
+                            "Alpha": {"category": "malicious", "result": "Phishing"},
+                        },
+                    }
+                }
+            },
+        )
+    )
+    result = await VirusTotalAnalyzer(secrets={"api_key": "x" * 16}).execute(classify("1.2.3.4"))
+    summary = result.summary.as_dict()
+    assert summary["verdict"] == Verdict.SUSPICIOUS.value
+    # Malicious first, so the strongest opinion is at the top of the list.
+    assert [entry["engine"] for entry in summary["detections"]] == ["Alpha", "Beta"]
+
+
+def test_cpe_strings_become_names_an_analyst_reads() -> None:
+    # Vendor and product stutter, so only one of them is kept.
+    assert technologies.from_cpe("cpe:2.3:a:nginx:nginx:1.24.0:*:*:*:*:*:*:*") == "nginx 1.24.0"
+    # Here the product alone ("http server") names nothing an analyst would
+    # recognise, and the vendor is the whole of the answer.
+    assert technologies.from_cpe("cpe:2.3:a:apache:http_server:2.4.7:*:*:*:*:*:*:*") == (
+        "apache http server 2.4.7"
+    )
+    # No version pinned: no trailing "*".
+    assert technologies.from_cpe("cpe:2.3:a:redhat:jboss:*:*:*:*:*:*:*:*") == "redhat jboss"
+    assert technologies.from_cpe("cpe:/a:openbsd:openssh:9.6") == "openbsd openssh 9.6"
+    assert technologies.from_cpe("not a cpe") is None
+
+
+def test_an_empty_or_unknown_product_is_not_a_technology() -> None:
+    assert technologies.clean("", "1.0") is None
+    assert technologies.clean("unknown") is None
+    assert technologies.clean("nginx", "  ") == "nginx"
+
+
+@respx.mock
+async def test_shodan_reports_what_is_running_on_the_host() -> None:
+    respx.get(url__startswith="https://api.shodan.io/shodan/host/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "ports": [80, 22],
+                "os": "Ubuntu",
+                "data": [
+                    {"port": 80, "product": "nginx", "version": "1.24.0"},
+                    {"port": 22, "product": "OpenSSH", "version": "9.6p1"},
+                    {"port": 443},
+                ],
+            },
+        )
+    )
+    result = await ShodanAnalyzer(secrets={"api_key": "x" * 16}).execute(classify("1.2.3.4"))
+    assert result.summary.as_dict()["technologies"] == ["OpenSSH 9.6p1", "Ubuntu", "nginx 1.24.0"]

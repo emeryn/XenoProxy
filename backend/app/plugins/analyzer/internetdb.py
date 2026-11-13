@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from app.models.job import ObservableType, Tlp, Verdict
+from app.plugins.base import technologies
 from app.plugins.base.analyzer import BaseAnalyzer
 from app.plugins.base.plugin import PluginResult, PluginSummary, ProviderInfo
 from app.plugins.base.registry import register
@@ -87,6 +88,13 @@ class InternetDbAnalyzer(BaseAnalyzer):
                 open_ports=ports,
                 cves=cves,
                 hostnames=hostnames,
+                technologies=[
+                    entry
+                    for entry in (
+                        technologies.from_cpe(str(cpe)) for cpe in raw.get("cpes") or []
+                    )
+                    if entry
+                ],
                 headline=headline + self.resolved_note(observable, address),
                 links=[
                     {

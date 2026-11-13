@@ -29,7 +29,9 @@ import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
+from app.core import provenance
 from app.core.logging import get_logger
+from app.models.job import JobOrigin
 from app.models.user import User
 from app.services import app_settings, mcp_tools
 from app.services.mcp_tools import Tool
@@ -160,12 +162,17 @@ class McpCaller:
             "X-Requested-With": "XMLHttpRequest",
             "Content-Type": "application/json",
         }
+        # The transport runs the application in this very task, so the mark
+        # set here reaches the route handler. A job submitted through an agent
+        # is then labelled as such in the history rather than looking like one
+        # the analyst ran by hand.
         async with httpx.AsyncClient(
             transport=transport, base_url="http://mcp.internal", timeout=180.0
         ) as client:
-            response = await client.request(
-                method, path, params=query or None, json=body, headers=headers
-            )
+            with provenance.entering(JobOrigin.MCP):
+                response = await client.request(
+                    method, path, params=query or None, json=body, headers=headers
+                )
 
         logger.info(
             "mcp_tool_call",

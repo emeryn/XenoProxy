@@ -44,6 +44,7 @@ from app.core.errors import NotFoundError, ValidationFailedError
 from app.core.logging import get_logger
 from app.models.job import (
     Job,
+    JobOrigin,
     JobStatus,
     ObservableType,
     PluginKind,
@@ -409,6 +410,7 @@ async def create_job(
     *,
     requested_by: User | None,
     requested_by_name: str,
+    origin: JobOrigin = JobOrigin.UI,
 ) -> Job:
     """Persist the job and one PENDING report per selected plugin."""
     visible_to = (
@@ -435,6 +437,7 @@ async def create_job(
         parent_job_id=request.parent_job_id,
         pivot_name=request.pivot_name,
         depth=request.depth,
+        origin=origin,
         requested_by_id=requested_by.id if requested_by else None,
         requested_by_name=requested_by_name,
         summary={"skipped_plugins": [entry.as_dict() for entry in request.skipped]},
@@ -934,6 +937,7 @@ async def _spawn_children(
                 request,
                 requested_by=user,
                 requested_by_name=plan.requested_by_name,
+                origin=JobOrigin.PIVOT,
             )
             await session.commit()
             created.append(child.id)

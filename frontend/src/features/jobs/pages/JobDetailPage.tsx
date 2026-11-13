@@ -23,7 +23,9 @@ import {
   RefreshCw,
   RotateCcw,
   Send,
+  Server,
   ServerCrash,
+  ShieldAlert,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -40,8 +42,9 @@ import {
   VerdictBanner,
 } from '@/components/ui/verdict';
 import { ApiError } from '@/lib/api-client';
+import { cn } from '@/lib/cn';
 import { formatDateTime, formatDuration, formatRelative } from '@/lib/format';
-import type { JobDetail, PluginReport, PluginType } from '@/lib/types';
+import type { Detection, JobDetail, PluginReport, PluginType } from '@/lib/types';
 import { jobsApi } from '../api';
 import { Author } from '../components/Author';
 
@@ -140,6 +143,49 @@ function RetryReportButton({ jobId, report }: { jobId: string; report: PluginRep
     >
       Retry
     </Button>
+  );
+}
+
+/**
+ * Which engines actually flagged the observable, for a source that runs many.
+ *
+ * "3/70" tells an analyst how loud the alarm is and nothing about whether to
+ * believe it. Three agreeing vendors with the same family name is a finding;
+ * three heuristic engines each calling it something different, on a file none
+ * of the majors touched, is the background noise of a multi-engine service.
+ * That judgement needs the names and what each one called it, which is what
+ * this shows — and it shows them whatever the verdict, so a lone detection is
+ * visible even when it was not loud enough to change the verdict.
+ */
+function EngineDetections({ detections }: { detections: Detection[] }) {
+  if (detections.length === 0) {
+    return null;
+  }
+  const malicious = detections.filter((entry) => entry.category === 'malicious').length;
+  return (
+    <section className="rounded-lg border border-border bg-surface-sunken p-3">
+      <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-faint">
+        <ShieldAlert className="h-3.5 w-3.5" aria-hidden />
+        {detections.length} engine{detections.length > 1 ? 's' : ''} flagged this
+        {malicious > 0 ? ` — ${malicious} as malicious` : ''}
+      </h4>
+      <ul className="flex flex-wrap gap-1.5">
+        {detections.map((entry) => (
+          <li
+            key={`${entry.engine}-${entry.result ?? ''}`}
+            className={cn(
+              'flex items-baseline gap-1.5 rounded-md border px-2 py-1 text-[11px]',
+              entry.category === 'malicious'
+                ? 'border-danger-border bg-danger-soft'
+                : 'border-warning-border bg-warning-soft',
+            )}
+          >
+            <span className="font-medium">{entry.engine}</span>
+            {entry.result ? <span className="font-mono text-muted">{entry.result}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -282,6 +328,8 @@ function ReportPanel({ jobId, report }: { jobId: string; report: PluginReport })
 
       {summary.headline ? <p className="text-sm">{summary.headline}</p> : null}
 
+      <EngineDetections detections={summary.detections ?? []} />
+
       {/* The capture comes back through the API, never from the provider: the
           analyst's address stays private and the content policy stays closed
           to remote images. It is a picture of a hostile page, so it is not
@@ -316,6 +364,7 @@ function ReportPanel({ jobId, report }: { jobId: string; report: PluginReport })
           { label: 'Network', value: summary.asn ?? '' },
           { label: 'Organisation', value: summary.organisation ?? '' },
           { label: 'Hostnames', value: (summary.hostnames ?? []).slice(0, 6).join(', ') },
+          { label: 'Running', value: (summary.technologies ?? []).join(', ') },
           { label: 'CVEs', value: (summary.cves ?? []).join(', ') },
         ]
           .filter((entry) => entry.value)
@@ -626,7 +675,7 @@ export function JobDetailPage() {
 
       <VerdictBanner verdict={job.verdict}>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Author name={job.requested_by_name} />
+          <Author name={job.requested_by_name} origin={job.origin} />
           {job.file_name ? (
             <Badge tone="primary" title="Submitted as a file; the observable is its digest">
               <Paperclip className="h-3 w-3" aria-hidden />
@@ -650,6 +699,27 @@ export function JobDetailPage() {
             <Badge key={tag}>{tag}</Badge>
           ))}
         </div>
+
+        {/* What is running there, next to the verdict rather than four
+            screens down in a raw payload. An analyst reading "malicious" on an
+            address asks what it is serving immediately afterwards, and a
+            version next to a CVE list is most of the triage. */}
+        {(job.summary?.technologies ?? []).length > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="flex items-center gap-1 text-xs text-faint">
+              <Server className="h-3.5 w-3.5" aria-hidden />
+              Running
+            </span>
+            {(job.summary.technologies ?? []).map((entry) => (
+              <span
+                key={entry}
+                className="rounded-md border border-border bg-surface-sunken px-2 py-0.5 font-mono text-[11px]"
+              >
+                {entry}
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         {running ? (
           <div className="mt-4">

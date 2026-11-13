@@ -60,7 +60,9 @@ response, so a retry cannot duplicate a job.
 
 Every container runs as a numeric non-root user, with a read-only filesystem, all
 capabilities dropped, `no-new-privileges`, a pids limit, a memory limit and core dumps
-disabled. Only the edge proxy publishes a port. The database network is internal and has
+disabled. Only the edge proxy publishes a port to the network; the frontend and the API
+publish one each on `127.0.0.1` for a host-side reverse proxy, unreachable from anywhere
+else. The database network is internal and has
 no route out. No container mounts the Docker socket.
 
 The runtime images carry no shell, compiler or package manager, and an in-process seccomp

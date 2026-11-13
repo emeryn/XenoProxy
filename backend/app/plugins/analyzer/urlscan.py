@@ -7,6 +7,7 @@ from typing import Any, ClassVar
 
 from app.core import http_client
 from app.models.job import ObservableType, Tlp, Verdict
+from app.plugins.base import technologies
 from app.plugins.base.analyzer import BaseAnalyzer
 from app.plugins.base.plugin import (
     PluginQuotaError,
@@ -130,6 +131,9 @@ class UrlScanAnalyzer(BaseAnalyzer):
             hostnames=sorted(
                 {str(item.get("page", {}).get("domain")) for item in results if item.get("page")}
             ),
+            technologies=[
+                entry for entry in [technologies.clean(page.get("server"))] if entry
+            ],
             headline=f"{len(results)} indexed scan(s); latest from {latest_time}.",
             screenshot_url=str(latest.get("screenshot") or "") or None,
             links=[

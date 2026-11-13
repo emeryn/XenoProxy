@@ -2,7 +2,7 @@
 
 # XenoProxy
 
-[![CI](https://github.com/emeryn/XenoProxy/actions/workflows/ci.yml/badge.svg)](https://github.com/emeryn/XenoProxy/actions/workflows/ci.yml)
+[![CI](https://github.com/skouedlabs/XenoProxy/actions/workflows/ci.yml/badge.svg)](https://github.com/skouedlabs/XenoProxy/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](backend/pyproject.toml)
 [![Node 22](https://img.shields.io/badge/node-22-blue.svg)](frontend/package.json)

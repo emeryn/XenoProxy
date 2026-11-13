@@ -280,7 +280,11 @@ export function DashboardPage() {
                   <span className="min-w-0 truncate font-mono text-xs group-hover:text-primary">
                     {job.observable_value}
                   </span>
-                  <Author name={job.requested_by_name} className="hidden md:flex" />
+                  <Author
+                    name={job.requested_by_name}
+                    origin={job.origin}
+                    className="hidden md:flex"
+                  />
                   {/* The badges size to their own text, so each sits in a cell
                       of its own rather than pushing the next one along. */}
                   <span className="min-w-0">

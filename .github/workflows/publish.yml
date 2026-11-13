@@ -76,10 +76,15 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           # The ghcr.io name uses the repository owner as it is written: that works because
-          # `emeryn` is already lower case, and a registry refuses capitals — an owner with any
-          # would need lower-casing here.
+          # `skouedlabs` is already lower case, and a registry refuses capitals — an owner with
+          # any would need lower-casing here.
+          #
+          # On Docker Hub the namespace and the account that signs in are not always the same
+          # thing: pushing to an organisation means logging in as a member of it. So the
+          # namespace is its own variable, falling back to the login name for the ordinary case
+          # where they do match.
           images: |
-            ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}/xenoproxy-${{ matrix.name }}
+            ${{ vars.DOCKERHUB_NAMESPACE || vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}/xenoproxy-${{ matrix.name }}
             ghcr.io/${{ github.repository_owner }}/xenoproxy-${{ matrix.name }}
           tags: |
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}

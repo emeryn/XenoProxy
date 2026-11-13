@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import PERMISSIONS
 from app.core.logging import get_logger
-from app.models.job import Job, PluginKind
+from app.models.job import Job, JobOrigin, PluginKind
 from app.models.user import User
 from app.plugins import load_all
 from app.plugins.base.registry import describe, iter_plugins
@@ -249,7 +249,10 @@ async def _submit_scan(context: ToolContext, args: dict[str, Any]) -> Any:
             context.session,
             raw_observable=observable,
             playbook_name=str(args.get("playbook") or "") or None,
-            tags=["assistant"],
+            # No tag: where the job came from is `origin` now, and tags belong
+            # to the analyst. One the engine writes by itself is noise in their
+            # filters.
+            tags=[],
         )
     except Exception as exc:
         raise ToolError(str(exc)) from exc
@@ -259,6 +262,7 @@ async def _submit_scan(context: ToolContext, args: dict[str, Any]) -> Any:
         request,
         requested_by=context.user,
         requested_by_name=context.user.username,
+        origin=JobOrigin.ASSISTANT,
     )
     # Committed before it is queued: the worker reads the row in its own
     # session, so queueing an uncommitted job races it to a job that is not

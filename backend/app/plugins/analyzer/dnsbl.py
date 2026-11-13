@@ -18,7 +18,7 @@ from typing import Any, ClassVar
 
 from app.models.job import ObservableType, Tlp, Verdict
 from app.plugins.base.analyzer import BaseAnalyzer
-from app.plugins.base.plugin import PluginResult, PluginSummary, ProviderInfo
+from app.plugins.base.plugin import Detection, PluginResult, PluginSummary, ProviderInfo
 from app.plugins.base.registry import register
 from app.services.observables import Observable
 
@@ -186,6 +186,15 @@ class DnsBlocklistAnalyzer(BaseAnalyzer):
                 # reason to look, which is what suspicious means here.
                 verdict=Verdict.MALICIOUS if len(listings) >= 2 else Verdict.SUSPICIOUS,
                 tags=[str(entry["label"]).lower().replace(" ", "-") for entry in listings],
+                detection_ratio=f"{len(listings)}/{len(zones)}",
+                detections=[
+                    Detection(
+                        engine=str(entry["label"]),
+                        category="malicious" if len(listings) >= 2 else "suspicious",
+                        result=str(entry["reasons"][0]) if entry["reasons"] else None,
+                    )
+                    for entry in listings
+                ],
                 headline=f"Listed on {len(listings)} of {len(zones)} list(s): {reasons[0]}",
                 extra={"listings": listings, "refused_queries": refused},
             ),

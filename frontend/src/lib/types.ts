@@ -65,6 +65,13 @@ export interface AuthMethods {
   proxy_enabled: boolean;
 }
 
+/** One engine's opinion inside a source that runs several of them. */
+export interface Detection {
+  engine: string;
+  category: 'malicious' | 'suspicious';
+  result: string | null;
+}
+
 export interface PluginSummaryData {
   verdict: Verdict;
   score: number | null;
@@ -74,8 +81,12 @@ export interface PluginSummaryData {
   asn: string | null;
   organisation: string | null;
   hostnames: string[];
+  /** What this source saw running: "nginx 1.24", "OpenSSH 9.6". */
+  technologies?: string[];
   cves: string[];
   detection_ratio: string | null;
+  /** The engines that flagged it. Empty for a single-opinion source. */
+  detections?: Detection[];
   headline: string | null;
   /** A page capture the source took, fetched back through the API. */
   screenshot_url?: string | null;
@@ -108,6 +119,8 @@ export interface PluginReportDetail extends PluginReport {
   raw_output: Record<string, unknown> | null;
 }
 
+export type JobOrigin = 'ui' | 'api' | 'assistant' | 'mcp' | 'pivot';
+
 export interface JobSummary {
   id: string;
   observable_value: string;
@@ -117,6 +130,8 @@ export interface JobSummary {
   tags: string[];
   playbook_name: string | null;
   requested_by_name: string;
+  /** Which entry point submitted it: the interface, a token, the assistant, MCP, or a pivot. */
+  origin: JobOrigin;
   created_at: string;
   finished_at: string | null;
   analyzer_count: number;
@@ -140,6 +155,8 @@ export interface JobDetail extends JobSummary {
     open_ports?: number[];
     cves?: string[];
     hostnames?: string[];
+    /** What the sources saw running there: "nginx 1.24", "OpenSSH 9.6". */
+    technologies?: string[];
     countries?: string[];
     organisations?: string[];
     asns?: string[];

@@ -5,7 +5,7 @@
 **Please do not open a public issue.**
 
 Use GitHub's private reporting form: **Security › Advisories › Report a vulnerability** on
-<https://github.com/emeryn/XenoProxy/security/advisories/new>. It is private between you and the
+<https://github.com/skouedlabs/XenoProxy/security/advisories/new>. It is private between you and the
 maintainers, and it is the only channel — no address is published here, so nothing to keep up to
 date and nothing to scrape.
 

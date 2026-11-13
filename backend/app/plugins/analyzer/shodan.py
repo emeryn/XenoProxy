@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 
 from app.core import http_client
 from app.models.job import ObservableType, Tlp, Verdict
+from app.plugins.base import technologies
 from app.plugins.base.analyzer import BaseAnalyzer
 from app.plugins.base.plugin import (
     PluginQuotaError,
@@ -77,11 +78,26 @@ class ShodanAnalyzer(BaseAnalyzer):
             raise PluginQuotaError("Shodan returned HTTP 429.")
         if response.status_code == 401:
             raise PluginQuotaError("Shodan rejected the configured API key.")
+        if response.status_code == 403:
+            # Not a bad key: the free `oss` plan answers 403 "Requires
+            # membership or higher" on this endpoint. Saying "rejected the
+            # credential" sends the analyst to re-paste a key that is fine.
+            # Shodan InternetDB covers the same ground without a key.
+            raise PluginQuotaError(
+                "Shodan refused the host lookup: this endpoint needs a paid membership "
+                "(the free plan answers HTTP 403). Shodan InternetDB needs no key."
+            )
         if not response.ok:
             return self.provider_http_error(response.status_code)
 
         raw: dict[str, Any] = response.json_body or {}
         tags = [str(tag).lower() for tag in raw.get("tags") or []]
+        stack = [
+            technologies.clean(service.get("product"), service.get("version"))
+            for service in raw.get("data") or []
+            if isinstance(service, dict)
+        ]
+        stack.append(technologies.clean(raw.get("os")))
         cves = sorted({str(cve).upper() for cve in (raw.get("vulns") or [])})
         ports = [int(port) for port in raw.get("ports") or [] if isinstance(port, int)]
 
@@ -100,6 +116,7 @@ class ShodanAnalyzer(BaseAnalyzer):
             asn=raw.get("asn"),
             organisation=raw.get("org") or raw.get("isp"),
             hostnames=[str(host) for host in raw.get("hostnames") or []],
+            technologies=[entry for entry in stack if entry],
             cves=cves,
             headline=(
                 f"{len(ports)} open port(s), {len(cves)} known CVE(s)."

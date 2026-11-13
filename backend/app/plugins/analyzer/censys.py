@@ -7,6 +7,7 @@ from typing import Any, ClassVar
 
 from app.core import http_client
 from app.models.job import ObservableType, Tlp, Verdict
+from app.plugins.base import technologies
 from app.plugins.base.analyzer import BaseAnalyzer
 from app.plugins.base.plugin import (
     PluginQuotaError,
@@ -20,6 +21,23 @@ from app.plugins.user_keys import USER_KEY_HELP
 from app.services.observables import Observable, hostname_of
 
 _BASE = "https://search.censys.io/api/v2"
+
+
+
+def _technologies(services: list[Any], operating_system: Any) -> list[str]:
+    """Censys names software per service, and the OS as a product of its own."""
+    found: list[str | None] = []
+    for service in services:
+        if not isinstance(service, dict):
+            continue
+        for entry in service.get("software") or []:
+            if isinstance(entry, dict):
+                found.append(technologies.clean(entry.get("product"), entry.get("version")))
+    if isinstance(operating_system, dict):
+        found.append(
+            technologies.clean(operating_system.get("product"), operating_system.get("version"))
+        )
+    return [entry for entry in found if entry]
 
 
 @register
@@ -106,6 +124,7 @@ class CensysAnalyzer(BaseAnalyzer):
             )
             if isinstance(host.get("dns"), dict)
             else [],
+            technologies=_technologies(services, host.get("operating_system")),
             headline=f"{len(ports)} exposed service(s) indexed by Censys.",
             links=[
                 {

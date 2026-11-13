@@ -131,3 +131,14 @@ types rather than defects, and a gate that is red from the first push teaches pe
 `.github/workflows/publish.yml` turns a push to `dev` into images tagged `dev` and `dev-<sha>`, and
 a `v*` tag into the release tags plus `latest`. Each image is built once and pushed to Docker Hub
 and GitHub Packages, so both registries carry the same digest.
+
+```bash
+docker pull skouedlabs/xenoproxy-backend:dev
+docker pull ghcr.io/skouedlabs/xenoproxy-backend:dev
+```
+
+GitHub Packages needs no secret: the run's own token pushes there, under the repository owner.
+Docker Hub needs `DOCKERHUB_USERNAME` (a repository variable or a secret) and `DOCKERHUB_TOKEN`.
+Set `DOCKERHUB_NAMESPACE` as well when the images live under an organisation rather than under the
+account that signs in — pushing to an organisation means authenticating as a member of it, so the
+two names are not necessarily the same. Left unset, the namespace is the login name.

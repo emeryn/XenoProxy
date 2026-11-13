@@ -14,12 +14,13 @@ from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DbSession, client_ip, require
-from app.core import http_client
+from app.core import http_client, provenance
 from app.core.config import get_settings
 from app.core.errors import NotFoundError, ValidationFailedError
 from app.core.logging import get_logger
 from app.models.job import (
     Job,
+    JobOrigin,
     JobStatus,
     ObservableType,
     PluginKind,
@@ -148,7 +149,11 @@ async def create_job(
         runtime_configuration=payload.runtime_configuration,
     )
     job = await orchestrator.create_job(
-        session, job_request, requested_by=user, requested_by_name=user.username
+        session,
+        job_request,
+        requested_by=user,
+        requested_by_name=user.username,
+        origin=provenance.from_request(request),
     )
     await audit.record(
         session,
@@ -287,7 +292,11 @@ async def create_file_job(
         runtime_configuration=choices.runtime_configuration,
     )
     job = await orchestrator.create_job(
-        session, job_request, requested_by=user, requested_by_name=user.username
+        session,
+        job_request,
+        requested_by=user,
+        requested_by_name=user.username,
+        origin=provenance.from_request(request),
     )
     job.file_name = sample.display_name
     job.file_size = sample.size
@@ -335,6 +344,7 @@ async def list_jobs(
     tag: Annotated[str | None, Query(max_length=64)] = None,
     requested_by: Annotated[str | None, Query(max_length=128)] = None,
     job_tlp: Annotated[Tlp | None, Query(alias="tlp")] = None,
+    origin: Annotated[JobOrigin | None, Query()] = None,
     derived: Annotated[bool | None, Query()] = None,
 ) -> Page[JobSummaryOut]:
     """Jobs are shared across the organisation so the team mutualises its history."""
@@ -347,6 +357,8 @@ async def list_jobs(
         statement = statement.where(Job.verdict == job_verdict)
     if job_tlp:
         statement = statement.where(Job.tlp == job_tlp)
+    if origin:
+        statement = statement.where(Job.origin == origin)
     if observable_type:
         statement = statement.where(Job.observable_type == observable_type)
     if tag:
@@ -652,7 +664,11 @@ async def rerun_job(
         runtime_configuration=dict(source.runtime_configuration or {}),
     )
     job = await orchestrator.create_job(
-        session, job_request, requested_by=user, requested_by_name=user.username
+        session,
+        job_request,
+        requested_by=user,
+        requested_by_name=user.username,
+        origin=provenance.from_request(request),
     )
     await audit.record(
         session,
@@ -752,6 +768,7 @@ def _job_summary(job: Job) -> JobSummaryOut:
         tlp=job.tlp,
         playbook_name=job.playbook_name,
         requested_by_name=job.requested_by_name,
+        origin=job.origin,
         created_at=job.created_at,
         finished_at=job.finished_at,
         analyzer_count=sum(

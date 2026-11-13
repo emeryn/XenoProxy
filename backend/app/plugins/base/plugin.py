@@ -52,6 +52,22 @@ AnalyzerConfigurationError = PluginConfigurationError
 AnalyzerQuotaError = PluginQuotaError
 
 
+@dataclass(frozen=True)
+class Detection:
+    """One engine's opinion inside a multi-engine source."""
+
+    engine: str
+    # "malicious" or "suspicious". Engines that saw nothing are not listed:
+    # sixty-five vendors saying "undetected" is noise around the five that did
+    # not, and the ratio already carries the denominator.
+    category: str
+    # What the engine called it, when it named it at all.
+    result: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"engine": self.engine, "category": self.category, "result": self.result}
+
+
 @dataclass
 class PluginSummary:
     """Normalised view of a plugin answer, rendered directly by the UI."""
@@ -64,8 +80,18 @@ class PluginSummary:
     asn: str | None = None
     organisation: str | None = None
     hostnames: list[str] = field(default_factory=list)
+    # What is running there, as names an analyst recognises: "nginx 1.24",
+    # "Apache Tomcat", "OpenSSH". Sources report this in a different shape each
+    # — a CPE, a product field, an HTTP Server header — so each normalises it
+    # here rather than leaving the analyst to dig for it in the raw payload.
+    technologies: list[str] = field(default_factory=list)
     cves: list[str] = field(default_factory=list)
     detection_ratio: str | None = None
+    # Which engines flagged it, for a source that aggregates several of them.
+    # A ratio says three out of seventy; it does not say *which* three, and
+    # that is the whole of the question when one engine is an outlier and
+    # three agreeing vendors are a finding.
+    detections: list[Detection] = field(default_factory=list)
     headline: str | None = None
     # A picture of what the observable looks like, as the provider's URL.
     # It is never loaded by the browser: the page fetches it back through
@@ -85,8 +111,10 @@ class PluginSummary:
             "asn": self.asn,
             "organisation": self.organisation,
             "hostnames": self.hostnames[:50],
+            "technologies": sorted(set(self.technologies))[:40],
             "cves": sorted(set(self.cves))[:200],
             "detection_ratio": self.detection_ratio,
+            "detections": [entry.as_dict() for entry in self.detections[:60]],
             "headline": self.headline,
             "screenshot_url": self.screenshot_url,
             "links": self.links[:10],

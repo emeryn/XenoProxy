@@ -32,7 +32,7 @@ capabilities dropped and `no-new-privileges`. See [Security](security.md#contain
 
 ## TLS and the reverse proxy
 
-The edge proxy is the only component that publishes a port, and the session cookie is
+The edge proxy is the only component that publishes a port to the network, and the session cookie is
 `Secure`, so anything other than `localhost` needs TLS.
 
 `deploy/nginx/nginx.conf` ships with the TLS block commented out and ready: TLS 1.3,
@@ -45,6 +45,56 @@ The `X-Remote-*` headers are cleared on every proxied request, so a client canno
 delegated identity by sending them itself. If you put another proxy in front, set
 `BACKEND_TRUSTED_PROXY_COUNT` to the number of hops, or the client address in the audit
 trail will be your own proxy's.
+
+### Using the Nginx you already run
+
+The bundled proxy is a convenience, not a requirement. On a host that already terminates
+TLS for everything else, two things get in each other's way — the certificates, the ACME
+renewal, the logs, the fail2ban jails — so it is cleaner to let the host own the edge.
+
+The frontend and the API each publish a port on the loopback interface for exactly this:
+
+| Service | Address | What answers |
+|---|---|---|
+| `frontend` | `127.0.0.1:8098` | the static assets |
+| `api` | `127.0.0.1:8097` | `/api/...` |
+
+Nothing outside the machine can reach either one: the binding is `127.0.0.1`, not `0.0.0.0`.
+
+Take the bundled proxy out of the way first, so one thing owns port 443 and one set of
+logs tells the whole story:
+
+```bash
+docker compose up -d --scale proxy=0
+```
+
+Then install [`deploy/nginx/xenoproxy-host.conf`](../deploy/nginx/xenoproxy-host.conf) as a
+site — `/etc/nginx/sites-available/` with a symlink on Debian and Ubuntu,
+`/etc/nginx/conf.d/` on RHEL and AlmaLinux — set the server name and the certificate paths,
+and reload:
+
+```bash
+nginx -t && systemctl reload nginx
+```
+
+It mirrors the container configuration: the same security headers, the same rate-limit
+zones, the same cleared `X-Remote-*` headers, and the same unbuffered location for the job
+event stream — without it the interface looks frozen until a job ends. TLS is on rather
+than commented out, because a host proxy is the public edge and the session cookie is
+`Secure`.
+
+Two settings have to follow:
+
+- `BACKEND_PUBLIC_URL` is the public URL, since the OIDC redirect is built from it;
+- `BACKEND_TRUSTED_PROXY_COUNT` counts the proxies in front of the application, this one
+  included. Get it wrong and the audit trail records the proxy's address instead of the
+  analyst's.
+
+For hardening the host Nginx itself — jails, WAF, blocklists, systemd sandboxing — see the
+`reverse-proxy-hardening` material; this file stops at what XenoProxy needs.
+
+With SELinux enforcing, a host Nginx is refused outbound connections until
+`setsebool -P httpd_can_network_connect on`.
 
 ## Egress proxy and internal certificate authorities
 

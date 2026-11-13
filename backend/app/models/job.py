@@ -78,6 +78,21 @@ class ScanMode(StrEnum):
     FORCE_NEW = "force_new"
 
 
+class JobOrigin(StrEnum):
+    """Where the request for this job came in through.
+
+    The analyst needs this to read the history: a job nobody remembers running
+    was very likely run for them by the assistant or by an agent over MCP, and
+    "who" alone does not say that — the account is the same either way.
+    """
+
+    UI = "ui"
+    API = "api"
+    ASSISTANT = "assistant"
+    MCP = "mcp"
+    PIVOT = "pivot"
+
+
 class Verdict(StrEnum):
     UNKNOWN = "unknown"
     CLEAN = "clean"
@@ -134,6 +149,9 @@ class Job(Base):
     )
     pivot_name: Mapped[str | None] = mapped_column(String(64))
     depth: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    origin: Mapped[JobOrigin] = mapped_column(
+        Enum(JobOrigin, name="job_origin"), default=JobOrigin.UI, nullable=False
+    )
     requested_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

@@ -308,7 +308,7 @@ export function JobsPage() {
                       </td>
                       <td className="px-3 py-2.5 text-right text-muted">{job.analyzer_count}</td>
                       <td className="px-3 py-2.5">
-                        <Author name={job.requested_by_name} />
+                        <Author name={job.requested_by_name} origin={job.origin} />
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-muted">
                         {formatRelative(job.created_at)}

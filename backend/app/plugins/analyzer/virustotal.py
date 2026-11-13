@@ -9,6 +9,7 @@ from app.core import http_client
 from app.models.job import ObservableType, Tlp, Verdict
 from app.plugins.base.analyzer import BaseAnalyzer
 from app.plugins.base.plugin import (
+    Detection,
     PluginQuotaError,
     PluginResult,
     PluginSummary,
@@ -53,7 +54,12 @@ class VirusTotalAnalyzer(BaseAnalyzer):
             "type": "integer",
             "default": 3,
             "label": "Engines flagging as malicious before the verdict is Malicious",
-        }
+        },
+        "suspicious_threshold": {
+            "type": "integer",
+            "default": 2,
+            "label": "Engines flagging at all before the verdict is Suspicious",
+        },
     }
     provider = ProviderInfo(
         name="VirusTotal",
@@ -109,14 +115,46 @@ class VirusTotalAnalyzer(BaseAnalyzer):
         total = sum(int(value or 0) for value in stats.values()) or 0
 
         threshold = int(self.option("malicious_threshold", 3))
+        flagging = max(int(self.option("suspicious_threshold", 2)), 1)
+
+        # One engine out of seventy is not a finding.
+        #
+        # VirusTotal runs dozens of engines, several of which are heuristic and
+        # flag on packing, on a young domain or on a rare file. A single one of
+        # them disagreeing with all the others is the ordinary background noise
+        # of the service, and promoting it to Suspicious promoted the whole job
+        # with it — which taught analysts to ignore the verdict, the one thing
+        # it must never do. The ratio and the engine list below stay visible
+        # whatever the verdict, so a lone detection is never hidden, only
+        # stopped from shouting.
         if malicious >= threshold:
             verdict = Verdict.MALICIOUS
-        elif malicious or suspicious:
+        elif malicious + suspicious >= flagging:
             verdict = Verdict.SUSPICIOUS
         elif total:
             verdict = Verdict.CLEAN
         else:
             verdict = Verdict.UNKNOWN
+
+        results = attributes.get("last_analysis_results") or {}
+        detections: list[Detection] = []
+        if isinstance(results, dict):
+            for engine, outcome in results.items():
+                if not isinstance(outcome, dict):
+                    continue
+                category = str(outcome.get("category") or "")
+                if category not in {"malicious", "suspicious"}:
+                    continue
+                detections.append(
+                    Detection(
+                        engine=str(outcome.get("engine_name") or engine)[:64],
+                        category=category,
+                        result=str(outcome["result"])[:96] if outcome.get("result") else None,
+                    )
+                )
+        # Malicious before suspicious, then alphabetically, so the list reads
+        # the same way twice and the strongest opinion is at the top.
+        detections.sort(key=lambda entry: (entry.category != "malicious", entry.engine.lower()))
 
         tags = [str(tag) for tag in attributes.get("tags") or []]
         categories = attributes.get("categories") or {}
@@ -133,8 +171,10 @@ class VirusTotalAnalyzer(BaseAnalyzer):
             asn=f"AS{attributes.get('asn')}" if attributes.get("asn") else None,
             organisation=attributes.get("as_owner"),
             detection_ratio=f"{malicious + suspicious}/{total}" if total else None,
+            detections=detections,
             headline=(
-                f"{malicious} engine(s) flag this observable as malicious out of {total}."
+                f"{malicious} engine(s) flag this observable as malicious and "
+                f"{suspicious} as suspicious, out of {total}."
                 if total
                 else "No engine verdict available."
             ),

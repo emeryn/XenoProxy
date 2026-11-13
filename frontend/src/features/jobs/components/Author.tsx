@@ -9,8 +9,11 @@
  * only has to be stable, so the same person is the same colour on every page.
  */
 
+import { Bot, GitBranch, Plug, Terminal } from 'lucide-react';
+
 import { cn } from '@/lib/cn';
 import { initialsOf } from '@/lib/format';
+import type { JobOrigin } from '@/lib/types';
 
 // Hues spaced around the wheel, kept away from the verdict colours so an
 // avatar can never be mistaken for a status.
@@ -46,25 +49,65 @@ export function AuthorAvatar({ name, className }: { name: string; className?: st
   );
 }
 
+/**
+ * How the job was submitted, when it was not submitted by hand.
+ *
+ * The account is the same whoever typed it, so without this a scan the
+ * assistant ran for an analyst is indistinguishable from one they ran
+ * themselves — and the first thing they do with a job they do not remember is
+ * doubt the history. `ui` is the ordinary case and carries no mark.
+ */
+const ORIGINS: Partial<Record<JobOrigin, { icon: typeof Bot; label: string }>> = {
+  assistant: { icon: Bot, label: 'Submitted by the assistant' },
+  mcp: { icon: Plug, label: 'Submitted by an agent over MCP' },
+  api: { icon: Terminal, label: 'Submitted with an API token' },
+  pivot: { icon: GitBranch, label: 'Created by a pivot' },
+};
+
+export function OriginMark({ origin, className }: { origin: JobOrigin; className?: string }) {
+  const entry = ORIGINS[origin];
+  if (!entry) {
+    return null;
+  }
+  const Icon = entry.icon;
+  return (
+    <span
+      className={cn(
+        'grid h-4 w-4 shrink-0 place-items-center rounded-full bg-surface-sunken text-muted',
+        className,
+      )}
+      title={entry.label}
+    >
+      <Icon className="h-2.5 w-2.5" aria-hidden />
+      <span className="sr-only">{entry.label}</span>
+    </span>
+  );
+}
+
 export function Author({
   name,
+  origin,
   className,
   hideName,
 }: {
   name: string;
+  origin?: JobOrigin;
   className?: string;
   /** On a narrow column the avatar carries it, with the name as a tooltip. */
   hideName?: boolean;
 }) {
   const label = name || 'Unknown';
   return (
-    <span className={cn('flex min-w-0 items-center gap-2', className)} title={label}>
-      <AuthorAvatar name={label} />
+    <span className={cn('flex min-w-0 items-center gap-1.5', className)}>
+      <AuthorAvatar name={label} className="shrink-0" />
       {hideName ? (
         <span className="sr-only">{label}</span>
       ) : (
-        <span className="truncate text-xs text-muted">{label}</span>
+        <span className="truncate text-xs text-muted" title={label}>
+          {label}
+        </span>
       )}
+      {origin ? <OriginMark origin={origin} /> : null}
     </span>
   );
 }

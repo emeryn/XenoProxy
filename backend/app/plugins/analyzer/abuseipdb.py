@@ -67,6 +67,11 @@ class AbuseIpdbAnalyzer(BaseAnalyzer):
             "default": 50,
             "label": "Confidence score above which the verdict is Malicious",
         },
+        "suspicious_threshold": {
+            "type": "integer",
+            "default": 25,
+            "label": "Confidence score above which the verdict is Suspicious",
+        },
     }
     provider = ProviderInfo(
         name="AbuseIPDB",
@@ -104,10 +109,24 @@ class AbuseIpdbAnalyzer(BaseAnalyzer):
         score = int(data.get("abuseConfidenceScore") or 0)
         reports = int(data.get("totalReports") or 0)
         threshold = int(self.option("malicious_threshold", 50))
+        suspicious_at = min(int(self.option("suspicious_threshold", 25)), threshold)
 
-        if score >= threshold:
+        # The verdict follows the confidence score, never the report count.
+        #
+        # Anyone may report any address to AbuseIPDB, and popular infrastructure
+        # collects reports the way a public inbox collects spam: 8.8.8.8 carries
+        # close to two hundred of them and a confidence of 0%. The score is
+        # AbuseIPDB's own judgement of those reports — weighted by reporter
+        # reputation, recency and agreement — so counting the raw reports on top
+        # of it does not add evidence, it overrides the provider's assessment
+        # with the thing the provider already discounted.
+        #
+        # A whitelisted address is one AbuseIPDB vouches for itself.
+        if data.get("isWhitelisted"):
+            verdict = Verdict.CLEAN
+        elif score >= threshold:
             verdict = Verdict.MALICIOUS
-        elif score > 0 or reports:
+        elif score >= suspicious_at:
             verdict = Verdict.SUSPICIOUS
         else:
             verdict = Verdict.CLEAN

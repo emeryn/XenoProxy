@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.job import (
+    JobOrigin,
     JobStatus,
     ObservableType,
     PluginKind,
@@ -118,6 +119,9 @@ class JobSummaryOut(BaseModel):
     tlp: Tlp
     playbook_name: str | None
     requested_by_name: str
+    # Which entry point submitted it. The account alone cannot say whether the
+    # analyst ran this themselves or the assistant ran it for them.
+    origin: JobOrigin = JobOrigin.UI
     created_at: datetime
     finished_at: datetime | None
     analyzer_count: int

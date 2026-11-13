@@ -2,7 +2,9 @@
 #
 # A clean clone starts with `docker compose up -d` alone: the init service
 # generates every secret into a named volume, so there is no .env to write and no
-# credential in this file. Only the proxy publishes a port; the database network
+# credential in this file. Only the proxy publishes a port to the network — the
+# frontend and the API publish one each on 127.0.0.1, for a host reverse proxy;
+# the database network
 # is internal.
 
 name: xenoproxy
@@ -181,6 +183,12 @@ services:
     image: xenoproxy/backend:0.1.0
     container_name: xenoproxy-api
     command: ["api"]
+    # Loopback only, for a reverse proxy running on the host instead of the
+    # `proxy` container. Nothing outside this machine can reach it, and the
+    # bundled proxy keeps working either way — it talks over the `edge` network,
+    # not through this.
+    ports:
+      - "127.0.0.1:8097:8000"
     depends_on:
       database:
         condition: service_healthy
@@ -301,6 +309,8 @@ services:
       dockerfile: Dockerfile
     image: xenoproxy/frontend:0.1.0
     container_name: xenoproxy-frontend
+    ports:
+      - "127.0.0.1:8098:8081"
     networks: [edge]
     tmpfs:
       - /tmp:size=32m
