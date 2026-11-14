@@ -1,17 +1,4 @@
 name: Publish images
-
-# Two ways in, and both run the full test suite first — the CI workflow, *called* as a gate rather
-# than copied, so the tests that guard a release can never drift from the tests that guard a pull
-# request:
-#
-#   * a push to `dev`  -> the `dev` tag, plus `dev-<sha>` to come back to a precise build
-#   * a tag `v1.2.3`   -> `1.2.3`, `1.2`, and `latest`
-#
-# Merging into `main` publishes nothing on its own: a release is a deliberate act, and the tag is
-# that act.
-#
-# Each image goes to **two registries from one build**, so both carry the same digest: Docker Hub,
-# which the deployment documentation points at, and GitHub Packages, next to the code.
 on:
   push:
     branches: [dev]
@@ -20,17 +7,13 @@ on:
 
 permissions:
   contents: read
-  # Pushing to ghcr.io with the token the run already has: no secret to create for it
   packages: write
 
 concurrency:
-  # Named after this workflow so the CI run it calls cannot collide with a CI run of its own
   group: publish-${{ github.ref }}
-  # A release in flight is never cancelled; a new push to dev supersedes the previous one
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
-  # Everything a pull request has to pass, passed again on exactly what is about to be published
   tests:
     name: Tests
     uses: ./.github/workflows/ci.yml
@@ -46,7 +29,6 @@ jobs:
         include:
           - name: backend
             context: ./backend
-            # The Dockerfile also holds a `test` stage: the published image is the runtime one
             target: runtime
           - name: frontend
             context: ./frontend
@@ -55,9 +37,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
-
-      # The username may be a variable or a secret depending on where it was put; the token is a
-      # secret either way.
       - name: Sign in to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -75,14 +54,6 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          # The ghcr.io name uses the repository owner as it is written: that works because
-          # `skouedlabs` is already lower case, and a registry refuses capitals — an owner with
-          # any would need lower-casing here.
-          #
-          # On Docker Hub the namespace and the account that signs in are not always the same
-          # thing: pushing to an organisation means logging in as a member of it. So the
-          # namespace is its own variable, falling back to the login name for the ordinary case
-          # where they do match.
           images: |
             ${{ vars.DOCKERHUB_NAMESPACE || vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}/xenoproxy-${{ matrix.name }}
             ghcr.io/${{ github.repository_owner }}/xenoproxy-${{ matrix.name }}
@@ -91,11 +62,7 @@ jobs:
             type=sha,prefix=dev-,format=short,enable=${{ github.ref == 'refs/heads/dev' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-          # latest=auto: set by a release tag, and never by a pre-release such as v1.2.0-rc1
           flavor: latest=auto
-
-      # A workflow_dispatch from a branch other than dev computes no tag at all. Say so, rather
-      # than letting docker fail on an empty tag list several minutes later.
       - name: There has to be something to tag
         run: |
           if [ -z "${{ steps.meta.outputs.tags }}" ]; then
@@ -112,11 +79,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          # The layer cache lives with the run, so a dev push rebuilds only what changed
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          # One architecture. amd64 is what the deployment documentation describes, and arm64
-          # through QEMU roughly triples the build: add it here when something needs it.
           platforms: linux/amd64
 
       - name: What was published
